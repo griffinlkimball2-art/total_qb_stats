@@ -1,0 +1,46 @@
+name: Update QB leaderboard
+
+on:
+  schedule:
+    - cron: "17 15 * * 2"   # Tuesdays 15:17 UTC = 8:17am Pacific (7:17 in winter)
+  workflow_dispatch:         # adds a "Run workflow" button for manual runs
+
+permissions:
+  contents: write            # lets the workflow commit back to the repo
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Install R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true    # prebuilt packages = much faster installs
+
+      - name: Install pandoc
+        uses: r-lib/actions/setup-pandoc@v2   # needed for selfcontained = TRUE
+
+      - name: Install R packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::nflreadr
+            any::dplyr
+            any::readr
+            any::reactable
+            any::htmlwidgets
+            any::htmltools
+
+      - name: Run script
+        run: Rscript qb_total_stats.R
+
+      - name: Commit and push if anything changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html *.csv
+          git diff --staged --quiet || git commit -m "Weekly leaderboard update"
+          git push
