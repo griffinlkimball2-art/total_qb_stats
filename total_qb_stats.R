@@ -1,5 +1,6 @@
-library(nflverse)
-library(tidyverse)
+library(nflreadr)   # load_player_stats(), from nflverse
+library(dplyr)      # filter, mutate, summarise, etc.
+library(readr)      # write_csv
 library(reactable)
 library(htmlwidgets)
 library(htmltools)
@@ -152,19 +153,19 @@ table <- reactable(
   defaultSorted   = list(tany_a = "desc"),
   columns = list(
     player        = colDef(name = "Player", minWidth = 160),
-    team          = colDef(name = "Team", align = "center"),
-    games         = colDef(name = "G"),
-    attempts      = colDef(name = "Atts"),
-    comp_pct      = colDef(name = "Comp %", format = colFormat(percent = TRUE, digits = 1)),
-    pass_yds      = colDef(name = "Passing Yds", format = colFormat(separators = TRUE)),
-    rush_yds      = colDef(name = "Rushing Yds", format = colFormat(separators = TRUE)),
+    team          = colDef(name = "Team", align = "center", width = 70),
+    games         = colDef(name = "G", width = 45),
+    attempts      = colDef(name = "Atts", width = 60),
+    comp_pct      = colDef(name = "Comp%", format = colFormat(percent = TRUE, digits = 1), width = 100),
+    pass_yds      = colDef(name = "Pass Yds", format = colFormat(separators = TRUE)),
+    rush_yds      = colDef(name = "Rush Yds", format = colFormat(separators = TRUE)),
     sack_yds_lost = colDef(name = "Sack Yds"),
-    total_net_yds = colDef(name = "Total Net Yds", format = colFormat(separators = TRUE)),
-    pass_tds      = colDef(name = "Passing TDs"),
-    rush_tds      = colDef(name = "Rushing TDs"),
+    total_net_yds = colDef(name = "TNY", format = colFormat(separators = TRUE), width = 75),
+    pass_tds      = colDef(name = "Pass TDs"),
+    rush_tds      = colDef(name = "Rush TDs"),
     total_tds     = colDef(name = "Total TDs"),
-    pass_int      = colDef(name = "Passing INTs"),
-    fumbles_lost  = colDef(name = "Fumbles Lost"),
+    pass_int      = colDef(name = "INTs", minWidth = 70),
+    fumbles_lost  = colDef(name = "FL", minWidth = 60),
     turnovers     = colDef(name = "Total TOs"),
     tany_a        = colDef(name = "TANY/A", format = colFormat(digits = 2),
                            style = tany_style)
@@ -176,7 +177,7 @@ page <- prependContent(
   table,
   h2(paste(season, "QB Total Production Leaderboard")),
   p(paste0("Regular season through Week ", last_week,
-           ". Minimum ", min_plays, " total plays. Data: nflverse."))
+           ". Minimum ", min_plays, " attempts. Data: nflverse."))
 )
 
 saveWidget(page, file.path(out_dir, "index.html"),
