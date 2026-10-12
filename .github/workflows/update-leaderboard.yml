@@ -35,7 +35,7 @@ jobs:
             any::htmltools
 
       - name: Run script
-        run: Rscript qb_total_stats.R
+        run: Rscript total_qb_stats.R
 
       - name: Commit and push if anything changed
         run: |
