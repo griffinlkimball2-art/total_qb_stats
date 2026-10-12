@@ -1,5 +1,8 @@
 library(nflverse)
 library(tidyverse)
+library(reactable)
+library(htmlwidgets)
+library(htmltools)
 
 season       <- 2026
 min_attempts <- 1      # minimum pass attempts in a week to count as a "QB game"
@@ -49,21 +52,21 @@ qb_weekly <- raw %>%
   filter(position == "QB") %>%
   transmute(
     player_id,
-    player     = player_display_name,
-    team       = coalesce(team),   # one of these will be NA-free
+    player        = player_display_name,
+    team,
     season,
     week,
     season_type,
     completions   = .data[[col_comp]],
     pass_att      = .data[[col_pass_att]],
     pass_yds      = passing_yards,
-    pass_td       = passing_tds,
+    pass_tds      = passing_tds,
     pass_int      = .data[[col_int]],
     sacks         = .data[[col_sacks]],
     sack_yds_lost = abs(.data[[col_sack_yds]]),  # force positive so we subtract it later
     rush_att      = carries,
     rush_yds      = rushing_yards,
-    rush_td       = rushing_tds,
+    rush_tds      = rushing_tds,
     fumbles_lost  = rowSums(across(all_of(fumble_cols)), na.rm = TRUE)
   ) %>%
   filter(pass_att >= min_attempts) %>%
@@ -74,8 +77,8 @@ qb_weekly <- raw %>%
 # group_by() splits the data into one group per QB; summarise() collapses each
 # group to one row. across(...) applies sum() to every stat column at once.
 # -----------------------------------------------------------------------------
-stat_cols <- c("completions", "pass_att", "pass_yds", "pass_td", "pass_int",
-               "sacks", "sack_yds_lost", "rush_att", "rush_yds", "rush_td",
+stat_cols <- c("completions", "pass_att", "pass_yds", "pass_tds", "pass_int",
+               "sacks", "sack_yds_lost", "rush_att", "rush_yds", "rush_tds",
                "fumbles_lost")
 
 qb_season <- qb_weekly %>%
@@ -87,26 +90,24 @@ qb_season <- qb_weekly %>%
     across(all_of(stat_cols), sum),
     .groups = "drop"
   ) %>%
-# ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
 # 5. COMBINED STATS
 # Edit or add to these freely; everything is built from the 11 base stats.
 # ---------------------------------------------------------------------------
 mutate(
-  dropbacks       = pass_att + sacks,
-  comp_pct        = completions / pass_att,
-  total_plays     = pass_att + sacks + rush_att,
-  total_yds       = pass_yds - sack_yds_lost + rush_yds,
-  total_td        = pass_td + rush_td,
-  turnovers       = pass_int + fumbles_lost,
-  yds_per_play    = total_yds / total_plays,
-  # ANY/A, then a "total" version that folds in rushing and fumbles
-  any_a           = (pass_yds + 20 * pass_td - 45 * pass_int - sack_yds_lost) /
-    dropbacks,
-  tany_a     = (pass_yds + rush_yds + 20 * total_td - 45 * turnovers -
-                       sack_yds_lost) / total_plays,
-  rush_share_yds  = rush_yds / total_yds
+  comp_pct      = completions / pass_att,
+  attempts      = pass_att + sacks + rush_att,     # total plays
+  total_net_yds = pass_yds - sack_yds_lost + rush_yds,
+  total_tds     = pass_tds + rush_tds,
+  turnovers     = pass_int + fumbles_lost,
+  tany_a        = (pass_yds + rush_yds + 20 * total_tds - 45 * turnovers -
+                     sack_yds_lost) / attempts
 ) %>%
-  arrange(desc(total_yds))
+  # Keep only the final columns, in display order
+  select(player, team, games, attempts, comp_pct, pass_yds, rush_yds,
+         sack_yds_lost, total_net_yds, pass_tds, rush_tds, total_tds,
+         pass_int, fumbles_lost, turnovers, tany_a) %>%
+  arrange(desc(tany_a))
 
 # -----------------------------------------------------------------------------
 # 6. SAVE
@@ -119,25 +120,20 @@ message("Saved through week ", last_week, ": ",
         nrow(qb_season), " QBs, ", nrow(qb_weekly), " QB-games.")
 
 # Quick look at the leaders
-print(head(select(qb_season, player, team, games, total_yds, total_td,
-                  turnovers, tany_a, comp_pct), 15))
+print(head(qb_season, 15))
 
 # -----------------------------------------------------------------------------
 # 7. HTML LEADERBOARD
 # install.packages(c("reactable", "htmlwidgets"))   # run once
 # -----------------------------------------------------------------------------
-library(reactable)
-library(htmlwidgets)
-library(htmltools)
 
 # Qualifying threshold so a QB with 3 snaps doesn't top the efficiency stats.
 # 15 plays per week elapsed; adjust to taste.
 min_plays <- 15 * last_week
 
+# qb_season already has exactly the display columns, so just filter
 leaderboard <- qb_season %>%
-  filter(total_plays >= min_plays) %>%
-  select(player, team, games, total_plays, comp_pct, pass_yds, rush_yds,
-         total_yds, total_td, turnovers, yds_per_play, any_a, tany_a, comp_pct)
+  filter(attempts >= min_plays)
 
 # Shades TANY/A cells from red (low) to green (high)
 tany_style <- function(value) {
@@ -155,21 +151,23 @@ table <- reactable(
   defaultPageSize = 25,
   defaultSorted   = list(tany_a = "desc"),
   columns = list(
-    player       = colDef(name = "Player", minWidth = 160),
-    team         = colDef(name = "Team", align = "center"),
-    games        = colDef(name = "G"),
-    total_plays  = colDef(name = "Plays"),
-    comp_pct     = colDef(name = "Comp %", format = colFormat(percent = TRUE, digits = 1)),
-    pass_yds     = colDef(name = "Pass Yds", format = colFormat(separators = TRUE)),
-    rush_yds     = colDef(name = "Rush Yds", format = colFormat(separators = TRUE)),
-    total_yds    = colDef(name = "Total Yds", format = colFormat(separators = TRUE)),
-    total_td     = colDef(name = "Total TD"),
-    turnovers    = colDef(name = "TO"),
-    comp_pct = colDef(name = "Comp %", format = colFormat(percent = TRUE, digits = 1)),
-    yds_per_play = colDef(name = "Yds/Play", format = colFormat(digits = 2)),
-    any_a        = colDef(name = "ANY/A", format = colFormat(digits = 2)),
-    tany_a       = colDef(name = "TANY/A", format = colFormat(digits = 2),
-                          style = tany_style)
+    player        = colDef(name = "Player", minWidth = 160),
+    team          = colDef(name = "Team", align = "center"),
+    games         = colDef(name = "G"),
+    attempts      = colDef(name = "Atts"),
+    comp_pct      = colDef(name = "Comp %", format = colFormat(percent = TRUE, digits = 1)),
+    pass_yds      = colDef(name = "Passing Yds", format = colFormat(separators = TRUE)),
+    rush_yds      = colDef(name = "Rushing Yds", format = colFormat(separators = TRUE)),
+    sack_yds_lost = colDef(name = "Sack Yds"),
+    total_net_yds = colDef(name = "Total Net Yds", format = colFormat(separators = TRUE)),
+    pass_tds      = colDef(name = "Passing TDs"),
+    rush_tds      = colDef(name = "Rushing TDs"),
+    total_tds     = colDef(name = "Total TDs"),
+    pass_int      = colDef(name = "Passing INTs"),
+    fumbles_lost  = colDef(name = "Fumbles Lost"),
+    turnovers     = colDef(name = "Total TOs"),
+    tany_a        = colDef(name = "TANY/A", format = colFormat(digits = 2),
+                           style = tany_style)
   )
 )
 

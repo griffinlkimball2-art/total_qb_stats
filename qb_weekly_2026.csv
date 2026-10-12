@@ -1,4 +1,4 @@
-player_id,player,team,season,week,season_type,completions,pass_att,pass_yds,pass_td,pass_int,sacks,sack_yds_lost,rush_att,rush_yds,rush_td,fumbles_lost
+player_id,player,team,season,week,season_type,completions,pass_att,pass_yds,pass_tds,pass_int,sacks,sack_yds_lost,rush_att,rush_yds,rush_tds,fumbles_lost
 00-0023459,Aaron Rodgers,PIT,2026,1,REG,24,40,221,1,0,2,15,3,-3,0,0
 00-0026498,Matthew Stafford,LA,2026,1,REG,15,25,155,0,1,0,0,2,-1,0,0
 00-0029604,Kirk Cousins,LV,2026,1,REG,21,30,160,3,2,0,0,5,-6,0,0
