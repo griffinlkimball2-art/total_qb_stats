@@ -143,6 +143,7 @@ player_id,player,team,season,week,season_type,completions,pass_att,pass_yds,pass
 00-0041117,Athan Kaliakmanis,WAS,2026,4,REG,15,33,186,1,1,1,9,3,16,0,0
 00-0041251,Jalon Daniels,TB,2026,4,REG,19,27,148,1,2,3,14,8,55,0,0
 00-0023459,Aaron Rodgers,PIT,2026,5,REG,22,31,235,3,0,1,10,1,6,0,0
+00-0026498,Matthew Stafford,LA,2026,5,REG,40,54,383,3,0,1,6,0,0,0,0
 00-0028986,Case Keenum,CHI,2026,5,REG,11,19,108,0,1,2,13,1,4,0,1
 00-0029604,Kirk Cousins,LV,2026,5,REG,19,28,243,1,0,3,23,0,0,0,0
 00-0030565,Geno Smith,NYJ,2026,5,REG,17,30,182,1,0,4,40,5,7,0,1
@@ -151,6 +152,7 @@ player_id,player,team,season,week,season_type,completions,pass_att,pass_yds,pass
 00-0033106,Jared Goff,DET,2026,5,REG,19,30,271,3,0,3,22,1,1,1,0
 00-0033119,Jacoby Brissett,ARI,2026,5,REG,29,47,292,3,1,5,28,2,19,0,0
 00-0033537,Deshaun Watson,CLE,2026,5,REG,15,33,155,1,0,8,54,6,40,0,1
+00-0034857,Josh Allen,BUF,2026,5,REG,12,19,210,1,1,1,8,10,121,1,0
 00-0034869,Sam Darnold,SEA,2026,5,REG,18,29,195,1,2,5,33,1,5,0,0
 00-0035228,Kyler Murray,MIN,2026,5,REG,24,30,229,1,0,2,18,10,51,0,0
 00-0035710,Daniel Jones,IND,2026,5,REG,24,44,267,0,0,1,1,3,4,0,0
