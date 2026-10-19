@@ -17,6 +17,16 @@ out_dir      <- "."    # change to wherever you want the CSVs saved
 # -----------------------------------------------------------------------------
 raw <- load_player_stats(seasons = season, summary_level = "week")
 
+# Play-by-play, used only for exact season CPOE. Each row is one play;
+# cpoe is NA on plays with no completion probability (spikes, some throwaways),
+# so averaging the non-NA values per passer matches rbsdm.com.
+pbp <- load_pbp(season)
+
+cpoe_exact <- pbp %>%
+  filter(season_type == "REG", !is.na(cpoe)) %>%
+  group_by(player_id = passer_player_id) %>%
+  summarise(cpoe = mean(cpoe), .groups = "drop")
+
 # -----------------------------------------------------------------------------
 # 2. HANDLE COLUMN NAMES
 # nflverse renamed some columns in its 2025 overhaul. This helper returns the
@@ -76,7 +86,7 @@ qb_weekly <- raw %>%
   ) %>%
   filter(pass_att >= min_attempts) %>%
   # NA -> 0 for counting stats. CPOE is skipped: a missing CPOE is "unknown",
-  # not "exactly average", so it stays NA and is ignored in the weighted mean.
+  # not "exactly average", so it stays NA in the weekly CSV.
   mutate(across(where(is.numeric) & !any_of("cpoe"), ~ coalesce(.x, 0)))
 
 # -----------------------------------------------------------------------------
@@ -94,9 +104,6 @@ qb_season <- qb_weekly %>%
   summarise(
     team  = last(team),          # most recent team (handles midseason trades)
     games = n(),
-    # CPOE is a rate, so weight each week by its pass attempts. This line MUST
-    # come before across(): after across() runs, pass_att is the season total.
-    cpoe  = weighted.mean(cpoe, pass_att, na.rm = TRUE),
     across(all_of(stat_cols), sum),
     .groups = "drop"
   ) %>%
@@ -116,6 +123,8 @@ mutate(
   tany_a        = (pass_yds + rush_yds + 20 * total_tds - 45 * turnovers -
                      sack_yds_lost) / attempts
 ) %>%
+  # Attach exact season CPOE from play-by-play (NA if a QB has no valid passes)
+  left_join(cpoe_exact, by = "player_id") %>%
   # Keep only the final columns, in display order
   select(player, team, games, attempts, comp_pct, cpoe, pass_yds, rush_yds,
          sack_yds_lost, total_net_yds, pass_tds, rush_tds, total_tds,
