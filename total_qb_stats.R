@@ -1,6 +1,6 @@
-library(nflreadr)   # load_player_stats(), from nflverse
-library(dplyr)      # filter, mutate, summarise, etc.
-library(readr)      # write_csv
+library(nflreadr)     # load_player_stats(), from nflverse
+library(dplyr)        # filter, mutate, summarise, etc.
+library(readr)        # write_csv
 library(reactable)
 library(htmlwidgets)
 library(htmltools)
@@ -37,6 +37,7 @@ col_sacks     <- pick_col(raw, c("sacks_suffered", "sacks"))
 col_sack_yds  <- pick_col(raw, c("sack_yards_lost", "sack_yards"))
 col_pass_att  <- pick_col(raw, c("attempts", "passing_attempts"))
 col_comp      <- pick_col(raw, c("completions", "passing_completions"))
+col_cpoe      <- pick_col(raw, c("passing_cpoe", "cpoe"))
 
 # Fumbles lost are split by play type; sum whichever pieces exist.
 fumble_cols <- intersect(
@@ -68,10 +69,15 @@ qb_weekly <- raw %>%
     rush_att      = carries,
     rush_yds      = rushing_yards,
     rush_tds      = rushing_tds,
-    fumbles_lost  = rowSums(across(all_of(fumble_cols)), na.rm = TRUE)
+    fumbles_lost  = rowSums(across(all_of(fumble_cols)), na.rm = TRUE),
+    cpoe          = .data[[col_cpoe]],           # percentage points, e.g. 3.2 = +3.2%
+    pass_epa      = passing_epa,                 # includes sacks
+    rush_epa      = rushing_epa                  # includes scrambles
   ) %>%
   filter(pass_att >= min_attempts) %>%
-  mutate(across(where(is.numeric), ~ coalesce(.x, 0)))   # NA -> 0
+  # NA -> 0 for counting stats. CPOE is skipped: a missing CPOE is "unknown",
+  # not "exactly average", so it stays NA and is ignored in the weighted mean.
+  mutate(across(where(is.numeric) & !any_of("cpoe"), ~ coalesce(.x, 0)))
 
 # -----------------------------------------------------------------------------
 # 4. AGGREGATE (season table)
@@ -80,7 +86,7 @@ qb_weekly <- raw %>%
 # -----------------------------------------------------------------------------
 stat_cols <- c("completions", "pass_att", "pass_yds", "pass_tds", "pass_int",
                "sacks", "sack_yds_lost", "rush_att", "rush_yds", "rush_tds",
-               "fumbles_lost")
+               "fumbles_lost", "pass_epa", "rush_epa")
 
 qb_season <- qb_weekly %>%
   filter(season_type == "REG") %>%
@@ -88,12 +94,15 @@ qb_season <- qb_weekly %>%
   summarise(
     team  = last(team),          # most recent team (handles midseason trades)
     games = n(),
+    # CPOE is a rate, so weight each week by its pass attempts. This line MUST
+    # come before across(): after across() runs, pass_att is the season total.
+    cpoe  = weighted.mean(cpoe, pass_att, na.rm = TRUE),
     across(all_of(stat_cols), sum),
     .groups = "drop"
   ) %>%
   # ---------------------------------------------------------------------------
 # 5. COMBINED STATS
-# Edit or add to these freely; everything is built from the 11 base stats.
+# Edit or add to these freely; everything is built from the base stats.
 # ---------------------------------------------------------------------------
 mutate(
   comp_pct      = completions / pass_att,
@@ -101,13 +110,15 @@ mutate(
   total_net_yds = pass_yds - sack_yds_lost + rush_yds,
   total_tds     = pass_tds + rush_tds,
   turnovers     = pass_int + fumbles_lost,
+  total_epa     = pass_epa + rush_epa,
+  epa_per_play  = total_epa / attempts,
   tany_a        = (pass_yds + rush_yds + 20 * total_tds - 45 * turnovers -
                      sack_yds_lost) / attempts
 ) %>%
   # Keep only the final columns, in display order
-  select(player, team, games, attempts, comp_pct, pass_yds, rush_yds,
+  select(player, team, games, attempts, comp_pct, cpoe, pass_yds, rush_yds,
          sack_yds_lost, total_net_yds, pass_tds, rush_tds, total_tds,
-         pass_int, fumbles_lost, turnovers, tany_a) %>%
+         pass_int, fumbles_lost, turnovers, epa_per_play, tany_a) %>%
   arrange(desc(tany_a))
 
 # -----------------------------------------------------------------------------
@@ -125,7 +136,6 @@ print(head(qb_season, 15))
 
 # -----------------------------------------------------------------------------
 # 7. HTML LEADERBOARD
-# install.packages(c("reactable", "htmlwidgets"))   # run once
 # -----------------------------------------------------------------------------
 
 # Qualifying threshold so a QB with 3 snaps doesn't top the efficiency stats.
@@ -136,12 +146,16 @@ min_plays <- 15 * last_week
 leaderboard <- qb_season %>%
   filter(attempts >= min_plays)
 
-# Shades TANY/A cells from red (low) to green (high)
-tany_style <- function(value) {
-  rng <- range(leaderboard$tany_a, na.rm = TRUE)
-  pct <- (value - rng[1]) / (rng[2] - rng[1])
-  rgb_val <- colorRamp(c("#f4c7c3", "#ffffff", "#b7e1cd"))(pct)
-  list(background = rgb(rgb_val, maxColorValue = 255), fontWeight = "bold")
+# Red (low) -> white -> green (high) shading for any column.
+# shade("tany_a") returns a styling function built from that column's range,
+# so the same code colors both TANY/A and EPA/Play.
+shade <- function(col) {
+  rng <- range(leaderboard[[col]], na.rm = TRUE)
+  function(value) {
+    pct <- (value - rng[1]) / (rng[2] - rng[1])
+    rgb_val <- colorRamp(c("#f4c7c3", "#ffffff", "#b7e1cd"))(pct)
+    list(background = rgb(rgb_val, maxColorValue = 255), fontWeight = "bold")
+  }
 }
 
 table <- reactable(
@@ -157,18 +171,21 @@ table <- reactable(
     games         = colDef(name = "G", width = 45),
     attempts      = colDef(name = "Atts", width = 60),
     comp_pct      = colDef(name = "Comp%", format = colFormat(percent = TRUE, digits = 1), width = 100),
-    pass_yds      = colDef(name = "Pass Yds", format = colFormat(separators = TRUE)),
-    rush_yds      = colDef(name = "Rush Yds", format = colFormat(separators = TRUE)),
-    sack_yds_lost = colDef(name = "Sack Yds"),
-    total_net_yds = colDef(name = "TNY", format = colFormat(separators = TRUE), width = 75),
-    pass_tds      = colDef(name = "Pass TDs"),
-    rush_tds      = colDef(name = "Rush TDs"),
-    total_tds     = colDef(name = "Total TDs"),
-    pass_int      = colDef(name = "INTs", minWidth = 70),
-    fumbles_lost  = colDef(name = "FL", minWidth = 60),
-    turnovers     = colDef(name = "Total TOs"),
+    cpoe          = colDef(name = "CPOE", format = colFormat(digits = 1), width = 85),
+    pass_yds      = colDef(name = "PYds", format = colFormat(separators = TRUE), width = 80),
+    rush_yds      = colDef(name = "RUYds", format = colFormat(separators = TRUE), width = 80),
+    sack_yds_lost = colDef(name = "SKYds", format = colFormat(separators = TRUE), width = 80),
+    total_net_yds = colDef(name = "TNY", format = colFormat(separators = TRUE), width = 70),
+    pass_tds      = colDef(name = "PTD", format = colFormat(separators = TRUE), width = 65),
+    rush_tds      = colDef(name = "RUTD", format = colFormat(separators = TRUE), width = 75),
+    total_tds     = colDef(name = "TDs", format = colFormat(separators = TRUE), width = 60),
+    pass_int      = colDef(name = "INT", minWidth = 60),
+    fumbles_lost  = colDef(name = "FL", minWidth = 45),
+    turnovers     = colDef(name = "TOs", minWidth = 55),
+    epa_per_play  = colDef(name = "EPA/Play", format = colFormat(digits = 2), width = 100,
+                           style = shade("epa_per_play")),
     tany_a        = colDef(name = "TANY/A", format = colFormat(digits = 2),
-                           style = tany_style)
+                           style = shade("tany_a"))
   )
 )
 
