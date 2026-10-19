@@ -112,13 +112,14 @@ mutate(
   turnovers     = pass_int + fumbles_lost,
   total_epa     = pass_epa + rush_epa,
   epa_per_play  = total_epa / attempts,
+  net_td_pct    = (total_tds - turnovers) / attempts * 100,   # net TDs per 100 plays
   tany_a        = (pass_yds + rush_yds + 20 * total_tds - 45 * turnovers -
                      sack_yds_lost) / attempts
 ) %>%
   # Keep only the final columns, in display order
   select(player, team, games, attempts, comp_pct, cpoe, pass_yds, rush_yds,
          sack_yds_lost, total_net_yds, pass_tds, rush_tds, total_tds,
-         pass_int, fumbles_lost, turnovers, epa_per_play, tany_a) %>%
+         pass_int, fumbles_lost, turnovers, net_td_pct, epa_per_play, tany_a) %>%
   arrange(desc(tany_a))
 
 # -----------------------------------------------------------------------------
@@ -168,23 +169,23 @@ table <- reactable(
   columns = list(
     player        = colDef(name = "Player", minWidth = 160),
     team          = colDef(name = "Team", align = "center", width = 70),
-    games         = colDef(name = "G", width = 45),
-    attempts      = colDef(name = "Atts", width = 60),
-    comp_pct      = colDef(name = "Comp%", format = colFormat(percent = TRUE, digits = 1), width = 100),
-    cpoe          = colDef(name = "CPOE", format = colFormat(digits = 1), width = 85),
-    pass_yds      = colDef(name = "PYds", format = colFormat(separators = TRUE), width = 80),
-    rush_yds      = colDef(name = "RUYds", format = colFormat(separators = TRUE), width = 80),
-    sack_yds_lost = colDef(name = "SKYds", format = colFormat(separators = TRUE), width = 80),
-    total_net_yds = colDef(name = "TNY", format = colFormat(separators = TRUE), width = 70),
-    pass_tds      = colDef(name = "PTD", format = colFormat(separators = TRUE), width = 65),
+    games         = colDef(name = "G", width = 40),
+    attempts      = colDef(name = "Atts", width = 59),
+    comp_pct      = colDef(name = "Comp%", format = colFormat(percent = TRUE, digits = 1), width = 99),
+    cpoe          = colDef(name = "CPOE", format = colFormat(digits = 1), width = 74),
+    pass_yds      = colDef(name = "PYds", format = colFormat(separators = TRUE), width = 69),
+    rush_yds      = colDef(name = "RUYds", format = colFormat(separators = TRUE), width = 79),
+    sack_yds_lost = colDef(name = "SKYds", format = colFormat(separators = TRUE), width = 79),
+    total_net_yds = colDef(name = "TNY", format = colFormat(separators = TRUE), width = 64),
+    pass_tds      = colDef(name = "PTD", format = colFormat(separators = TRUE), width = 64),
     rush_tds      = colDef(name = "RUTD", format = colFormat(separators = TRUE), width = 75),
-    total_tds     = colDef(name = "TDs", format = colFormat(separators = TRUE), width = 60),
-    pass_int      = colDef(name = "INT", minWidth = 60),
-    fumbles_lost  = colDef(name = "FL", minWidth = 45),
-    turnovers     = colDef(name = "TOs", minWidth = 55),
-    epa_per_play  = colDef(name = "EPA/Play", format = colFormat(digits = 2), width = 100,
-                           style = shade("epa_per_play")),
-    tany_a        = colDef(name = "TANY/A", format = colFormat(digits = 2),
+    total_tds     = colDef(name = "TD", format = colFormat(separators = TRUE), width = 54),
+    pass_int      = colDef(name = "INT", minWidth = 59),
+    fumbles_lost  = colDef(name = "FL", minWidth = 50),
+    turnovers     = colDef(name = "TO", minWidth = 54),
+    net_td_pct    = colDef(name = "Net TD%", format = colFormat(digits = 2), width = 99),
+    epa_per_play  = colDef(name = "EPA/Play", format = colFormat(digits = 2), width = 99),
+    tany_a        = colDef(name = "TANY/A", format = colFormat(digits = 2), width = 90,
                            style = shade("tany_a"))
   )
 )
