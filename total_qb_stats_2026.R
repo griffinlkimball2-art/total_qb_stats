@@ -166,7 +166,8 @@ mutate(
 # -----------------------------------------------------------------------------
 # 6. SAVE
 # -----------------------------------------------------------------------------
-last_week <- max(qb_weekly$week)
+# Regular-season weeks only, so playoff weeks (19-22) never inflate the threshold
+last_week <- max(qb_weekly$week[qb_weekly$season_type == "REG"])
 write_csv(qb_weekly, file.path(out_dir, paste0("qb_weekly_", season, ".csv")))
 write_csv(qb_season, file.path(out_dir, paste0("qb_season_", season, ".csv")))
 
@@ -188,17 +189,48 @@ min_plays <- 15 * last_week
 leaderboard <- qb_season %>%
   filter(attempts >= min_plays)
 
-# Red (low) -> white -> green (high) shading for any column.
-# shade("tany_a") returns a styling function built from that column's range,
-# so the same code colors both TANY/A and EPA/Play.
+# Red (low) -> clear (middle) -> green (high) shading for any column.
+# Semi-transparent colors, so the shading reads on both light and dark backgrounds.
+# shade("tany_a") returns a styling function built from that column's range.
 shade <- function(col) {
   rng <- range(leaderboard[[col]], na.rm = TRUE)
   function(value) {
-    pct <- (value - rng[1]) / (rng[2] - rng[1])
-    rgb_val <- colorRamp(c("#f4c7c3", "#ffffff", "#b7e1cd"))(pct)
-    list(background = rgb(rgb_val, maxColorValue = 255), fontWeight = "bold")
+    if (is.na(value)) return(NULL)
+    pct   <- (value - rng[1]) / (rng[2] - rng[1])      # 0 = worst, 1 = best
+    alpha <- abs(pct - 0.5) * 2 * 0.55                 # stronger toward the extremes
+    rgb_val <- if (pct >= 0.5) "63, 185, 80" else "248, 81, 73"
+    list(background = sprintf("rgba(%s, %.2f)", rgb_val, alpha), fontWeight = "bold")
   }
 }
+
+# Page colors: the same palette as the landing page (index.html). The values are
+# CSS variables, so the media query swaps everything to dark when the visitor's
+# device is in dark mode.
+page_css <- r"---(
+:root {
+  --bg: #ffffff; --text: #1f2328; --muted: #656d76;
+  --card: #f6f8fa; --border: #d0d7de; --accent: #1a7f37;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --text: #e6edf3; --muted: #8d96a0;
+    --card: #161b22; --border: #30363d; --accent: #3fb950;
+  }
+}
+html, body { background: var(--bg); color: var(--text); }
+body {
+  margin: 0; padding: 24px 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+h2 { margin: 16px 0 4px; }
+p.note { color: var(--muted); margin: 0 0 16px; }
+a.back {
+  display: inline-block; padding: 6px 14px; font-size: 0.9rem;
+  background: var(--card); color: var(--text); text-decoration: none;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+a.back:hover { border-color: var(--accent); }
+)---"
 
 table <- reactable(
   leaderboard,
@@ -207,6 +239,19 @@ table <- reactable(
   highlight       = TRUE,
   defaultPageSize = 25,
   defaultSorted   = list(tany_a = "desc"),
+  # Table colors point at the CSS variables above, so they follow light/dark mode
+  theme = reactableTheme(
+    color           = "var(--text)",
+    backgroundColor = "var(--bg)",
+    borderColor     = "var(--border)",
+    stripedColor    = "var(--card)",
+    highlightColor  = "var(--border)",
+    inputStyle      = list(backgroundColor = "var(--card)", color = "var(--text)",
+                           borderColor = "var(--border)"),
+    selectStyle     = list(backgroundColor = "var(--card)", color = "var(--text)"),
+    pageButtonHoverStyle  = list(backgroundColor = "var(--card)"),
+    pageButtonActiveStyle = list(backgroundColor = "var(--border)")
+  ),
   columns = list(
     player        = colDef(name = "Player", minWidth = 160),
     team          = colDef(name = "Team", align = "center", width = 70),
@@ -234,12 +279,16 @@ table <- reactable(
 # Title and note above the table
 page <- prependContent(
   table,
+  tags$style(HTML(page_css)),
+  tags$a(href = "index.html", class = "back", "\u2190 All seasons"),
   h2(paste(season, "QB Total Production Leaderboard")),
-  p(paste0("Regular season through Week ", last_week,
-           ". Minimum ", min_plays, " attempts. Excludes spikes and kneels. Data: nflverse."))
+  p(class = "note", paste0("Regular season through Week ", last_week,
+                           ". Minimum ", min_plays, " attempts. Excludes spikes and kneels. Data: nflverse."))
 )
 
-saveWidget(page, file.path(out_dir, "index.html"),
-           selfcontained = TRUE, title = "QB Leaderboard")
+# background = the page color; saveWidget otherwise forces a white background
+saveWidget(page, file.path(out_dir, paste0("index_", season, ".html")),
+           selfcontained = TRUE, title = paste(season, "QB Leaderboard"),
+           background = "var(--bg)")
 
-message("Leaderboard saved to index.html")
+message("Leaderboard saved to index_", season, ".html")
