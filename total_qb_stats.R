@@ -17,15 +17,35 @@ out_dir      <- "."    # change to wherever you want the CSVs saved
 # -----------------------------------------------------------------------------
 raw <- load_player_stats(seasons = season, summary_level = "week")
 
-# Play-by-play, used only for exact season CPOE. Each row is one play;
-# cpoe is NA on plays with no completion probability (spikes, some throwaways),
-# so averaging the non-NA values per passer matches rbsdm.com.
+# Play-by-play: one row per play. Used for exact season CPOE and to strip
+# spikes and kneels out of the box-score totals.
 pbp <- load_pbp(season)
 
+# cpoe is NA on plays with no completion probability (spikes, some throwaways),
+# so averaging the non-NA values per passer matches rbsdm.com.
 cpoe_exact <- pbp %>%
   filter(season_type == "REG", !is.na(cpoe)) %>%
   group_by(player_id = passer_player_id) %>%
   summarise(cpoe = mean(cpoe), .groups = "drop")
+
+# Spikes count as pass attempts (incompletions) in the box score.
+# Counted per QB per game so they're only removed from games we keep.
+spikes_wk <- pbp %>%
+  filter(qb_spike == 1, play_type != "no_play", !is.na(passer_player_id)) %>%
+  count(player_id = passer_player_id, season_type, week, name = "spikes")
+
+# Kneels count as carries in the box score, and their yards (about -1 each)
+# and EPA (often very negative) are baked into rushing yards and rushing EPA,
+# so all three get removed.
+kneels_wk <- pbp %>%
+  filter(qb_kneel == 1, play_type != "no_play", !is.na(rusher_player_id)) %>%
+  group_by(player_id = rusher_player_id, season_type, week) %>%
+  summarise(
+    kneels    = n(),
+    kneel_yds = sum(yards_gained, na.rm = TRUE),
+    kneel_epa = sum(epa, na.rm = TRUE),
+    .groups = "drop"
+  )
 
 # -----------------------------------------------------------------------------
 # 2. HANDLE COLUMN NAMES
@@ -84,10 +104,22 @@ qb_weekly <- raw %>%
     pass_epa      = passing_epa,                 # includes sacks
     rush_epa      = rushing_epa                  # includes scrambles
   ) %>%
-  filter(pass_att >= min_attempts) %>%
+  # Attach each game's spikes and kneels (NA when a QB had none)
+  left_join(spikes_wk, by = c("player_id", "season_type", "week")) %>%
+  left_join(kneels_wk, by = c("player_id", "season_type", "week")) %>%
   # NA -> 0 for counting stats. CPOE is skipped: a missing CPOE is "unknown",
   # not "exactly average", so it stays NA in the weekly CSV.
-  mutate(across(where(is.numeric) & !any_of("cpoe"), ~ coalesce(.x, 0)))
+  mutate(across(where(is.numeric) & !any_of("cpoe"), ~ coalesce(.x, 0))) %>%
+  # Remove spikes and kneels: they aren't real attempts to gain yards, and
+  # kneels penalize QBs whose teams are often in victory formation.
+  # The spikes/kneels columns stay in the weekly CSV for reference.
+  mutate(
+    pass_att = pass_att - spikes,       # spikes are 0-for-1, 0 yards
+    rush_att = rush_att - kneels,
+    rush_yds = rush_yds - kneel_yds,    # kneel yards are negative, so this adds them back
+    rush_epa = rush_epa - kneel_epa
+  ) %>%
+  filter(pass_att >= min_attempts)
 
 # -----------------------------------------------------------------------------
 # 4. AGGREGATE (season table)
@@ -204,7 +236,7 @@ page <- prependContent(
   table,
   h2(paste(season, "QB Total Production Leaderboard")),
   p(paste0("Regular season through Week ", last_week,
-           ". Minimum ", min_plays, " attempts. Data: nflverse."))
+           ". Minimum ", min_plays, " attempts. Excludes spikes and kneels. Data: nflverse."))
 )
 
 saveWidget(page, file.path(out_dir, "index.html"),
